@@ -1,0 +1,209 @@
+package Laundry;
+
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Font;
+import java.awt.GridLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.sql.Connection;
+import java.sql.PreparedStatement; // ADDED: Missing import for saving
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
+import javax.swing.SwingConstants;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.LineBorder;
+
+public class PricingSetup extends JDialog {
+
+    private final Color BG_BEIGE = new Color(235, 242, 252);
+    private final Color CARD_WHITE = new Color(255, 255, 255);
+    private final Color TEXT_DARK = new Color(15, 35, 65);
+    private final Color BORDER_BEIGE = new Color(200, 220, 245);
+
+    private Map<String, JTextField> priceFields;
+
+    public PricingSetup(JFrame parent) {
+        super(parent, "Service Pricing Management", true);
+        setSize(450, 550);
+        setLocationRelativeTo(parent);
+        setResizable(false);
+
+        JPanel contentPane = new JPanel(new BorderLayout(0, 20));
+        contentPane.setBackground(BG_BEIGE);
+        contentPane.setBorder(new EmptyBorder(25, 30, 25, 30));
+        setContentPane(contentPane);
+
+        // --- HEADER ---
+        JPanel headerPanel = new JPanel(new GridLayout(2, 1));
+        headerPanel.setOpaque(false);
+
+        JLabel lblTitle = new JLabel("Pricing Setup", SwingConstants.CENTER);
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        lblTitle.setForeground(new Color(0, 102, 204));
+
+        JLabel lblSub = new JLabel("Update the current service rates below", SwingConstants.CENTER);
+        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lblSub.setForeground(new Color(100, 130, 170));
+
+        headerPanel.add(lblTitle);
+        headerPanel.add(lblSub);
+        contentPane.add(headerPanel, BorderLayout.NORTH);
+
+        // --- BODY (FORM) ---
+        JPanel formWrapper = new JPanel(new BorderLayout());
+        formWrapper.setBackground(CARD_WHITE);
+
+        formWrapper.setBorder(BorderFactory.createCompoundBorder(
+            new LineBorder(BORDER_BEIGE, 2, true),
+            new EmptyBorder(20, 40, 20, 40)
+        ));
+
+        JPanel formPanel = new JPanel(new GridLayout(0, 2, 15, 20));
+        formPanel.setOpaque(false);
+        priceFields = new HashMap<>();
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT service_name, price FROM prices")) {
+
+            while (rs.next()) {
+                String name = rs.getString("service_name");
+
+                // UPDATED: Added Peso sign to the label
+                JLabel nameLabel = new JLabel(name + " (₱):");
+                nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+                nameLabel.setForeground(TEXT_DARK);
+
+                JTextField priceInput = new JTextField(String.format("%.2f", rs.getDouble("price")));
+                priceInput.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+                priceInput.setHorizontalAlignment(SwingConstants.RIGHT);
+                priceInput.setBorder(BorderFactory.createCompoundBorder(
+                    new LineBorder(BORDER_BEIGE, 1, true),
+                    new EmptyBorder(4, 8, 4, 8)
+                ));
+                // Allow only digits and a single decimal point (max 2 decimal places)
+                ((javax.swing.text.AbstractDocument) priceInput.getDocument()).setDocumentFilter(new javax.swing.text.DocumentFilter() {
+                    @Override
+                    public void insertString(javax.swing.text.DocumentFilter.FilterBypass fb, int off, String text, javax.swing.text.AttributeSet a) throws javax.swing.text.BadLocationException {
+                        String current = fb.getDocument().getText(0, fb.getDocument().getLength());
+                        String result = current.substring(0, off) + text + current.substring(off);
+                        if (text != null && result.matches("\\d*(\\.\\d{0,2})?")) {
+							super.insertString(fb, off, text, a);
+						}
+                    }
+                    @Override
+                    public void replace(javax.swing.text.DocumentFilter.FilterBypass fb, int off, int len, String text, javax.swing.text.AttributeSet a) throws javax.swing.text.BadLocationException {
+                        String current = fb.getDocument().getText(0, fb.getDocument().getLength());
+                        String result = current.substring(0, off) + (text == null ? "" : text) + current.substring(off + len);
+                        if (text == null || result.matches("\\d*(\\.\\d{0,2})?")) {
+							super.replace(fb, off, len, text, a);
+						}
+                    }
+                });
+
+                formPanel.add(nameLabel);
+                formPanel.add(priceInput);
+                priceFields.put(name, priceInput);
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load prices from database.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+
+        formWrapper.add(formPanel, BorderLayout.CENTER);
+        contentPane.add(formWrapper, BorderLayout.CENTER);
+
+        // --- FOOTER (BUTTONS) ---
+        JPanel buttonPanel = new JPanel(new GridLayout(1, 2, 15, 0));
+        buttonPanel.setOpaque(false);
+
+        JButton btnCancel = new JButton("CANCEL");
+        styleButton(btnCancel, TEXT_DARK, CARD_WHITE, false);
+        btnCancel.addActionListener(e -> dispose());
+        buttonPanel.add(btnCancel);
+
+        JButton btnSave = new JButton("SAVE CHANGES");
+        styleButton(btnSave, TEXT_DARK, CARD_WHITE, false);
+        btnSave.addActionListener(e -> savePrices());
+        buttonPanel.add(btnSave);
+
+        contentPane.add(buttonPanel, BorderLayout.SOUTH);
+    }
+
+    private void styleButton(JButton button, Color bg, Color fg, boolean isTransparent) {
+        button.setBackground(bg);
+        button.setForeground(fg);
+        button.setOpaque(true);
+
+        if (isTransparent) {
+            button.setContentAreaFilled(false);
+        }
+
+        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setBorder(new LineBorder(isTransparent ? fg : bg, 2, true));
+
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+			public void mouseEntered(MouseEvent e) {
+                if (!isTransparent) {
+                    button.setBackground(new Color(0, 70, 150));
+                } else {
+                    button.setBackground(fg);
+                    button.setForeground(bg);
+                }
+            }
+            @Override
+			public void mouseExited(MouseEvent e) {
+                button.setBackground(bg);
+                button.setForeground(fg);
+            }
+        });
+    }
+
+    private void savePrices() {
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement("UPDATE prices SET price = ? WHERE service_name = ?")) {
+
+            for (Map.Entry<String, JTextField> entry : priceFields.entrySet()) {
+                String raw = entry.getValue().getText().trim();
+                if (raw.isEmpty()) {
+                    JOptionPane.showMessageDialog(this,
+                        "Price for '" + entry.getKey() + "' cannot be empty.",
+                        "Invalid Price", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                double newPrice = Double.parseDouble(raw);
+                if (newPrice <= 0) {
+                    JOptionPane.showMessageDialog(this,
+                        "Price for '" + entry.getKey() + "' must be greater than zero.",
+                        "Invalid Price", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                pstmt.setDouble(1, newPrice);
+                pstmt.setString(2, entry.getKey());
+                pstmt.executeUpdate();
+            }
+            JOptionPane.showMessageDialog(this, "Prices successfully updated!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            dispose();
+
+        } catch (NumberFormatException nfe) {
+            JOptionPane.showMessageDialog(this, "Please enter valid numbers only.", "Input Error", JOptionPane.WARNING_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Database Error while saving.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}
